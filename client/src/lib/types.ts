@@ -122,7 +122,8 @@ export interface Allocation {
   id: string;
   examId: string;
   roomId: string;
-  employeeIds: string[]; // Lista de IDs dos funcionários nesta sala
+  employeeIds: string[];
+  period?: string; // Lista de IDs dos funcionários nesta sala
   updatedAt: any;
 }
 
