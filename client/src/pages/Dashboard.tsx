@@ -16,7 +16,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { 
   PlusIcon, PencilIcon, TrashIcon, ArrowLeftOnRectangleIcon, 
   UsersIcon, MagnifyingGlassIcon, FunnelIcon, CalendarDaysIcon, 
-  ClockIcon, CheckCircleIcon, MegaphoneIcon, DocumentDuplicateIcon 
+  ClockIcon, CheckCircleIcon, MegaphoneIcon, DocumentDuplicateIcon,
+  Cog6ToothIcon, ClipboardDocumentCheckIcon // <--- Ícone adicionado para o botão de Cadastros
 } from "@heroicons/react/24/outline";
 import { format, isSameMonth, parseISO, compareAsc } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -298,7 +299,37 @@ export default function Dashboard() {
              <div className="bg-primary/10 p-2 rounded-lg"><UsersIcon className="w-5 h-5 text-primary" /></div>
              <div><h1 className="text-sm font-display font-bold text-gray-900 leading-tight">Painel Administrativo</h1><p className="text-[10px] text-gray-500 font-medium">Afya Itajubá</p></div>
           </div>
-          <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-red-600 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50"><ArrowLeftOnRectangleIcon className="w-4 h-4" /> Sair</button>
+          
+          <div className="flex items-center gap-2">
+            {/* --- BOTÃO CADASTROS (NOVO) --- */}
+            <button 
+                onClick={() => setLocation("/admin/registries")} 
+                className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-50"
+            >
+                <Cog6ToothIcon className="w-4 h-4" /> 
+                <span className="hidden sm:inline">Cadastros</span>
+            </button>
+
+            <div className="h-4 w-px bg-gray-200 mx-1"></div>
+
+            <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-red-600 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50">
+                <ArrowLeftOnRectangleIcon className="w-4 h-4" /> Sair
+            </button>
+
+            <button 
+              onClick={() => setLocation("/admin/exams")} 
+              className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-purple-600 transition-colors px-3 py-1.5 rounded-lg hover:bg-purple-50"
+          >
+              <ClipboardDocumentCheckIcon className="w-4 h-4" /> 
+              <span className="hidden sm:inline">Provas</span>
+          </button>
+
+          {/* Botão Cadastros */}
+          <button onClick={() => setLocation("/admin/registries")} className="...">
+              {/* ... */}
+          </button>
+
+          </div>
         </div>
       </header>
 
@@ -416,7 +447,7 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL NOTIFICAÇÃO (MANTIDO) */}
+      {/* MODAL NOTIFICAÇÃO */}
       <Dialog open={isNotifModalOpen} onOpenChange={setIsNotifModalOpen}>
         <DialogContent className="max-w-md bg-white">
             <DialogHeader><DialogTitle>Novo Aviso</DialogTitle></DialogHeader>

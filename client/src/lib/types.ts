@@ -67,3 +67,74 @@ export interface AppNotification {
   targetPeriods: string[]; // Ex: ['1', '2'] ou ['all']
   createdAt: Timestamp;
 }
+
+export type EmployeeRole = 'Fiscal' | 'Aplicador' | 'Apoio' | 'Coordenação';
+
+export interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: EmployeeRole;
+  experienceLevel: 1 | 2 | 3 | 4 | 5; // 1 = Novato, 5 = Expert
+  isActive: boolean;
+  createdAt?: any;
+}
+
+export interface Room {
+  id: string;
+  name: string; // Ex: "Sala 101", "Auditório Master"
+  block: string; // Ex: "Bloco A", "Bloco de Medicina"
+  capacity: number;
+  features: string[]; // Ex: ["Ar Condicionado", "Acessível", "Projetor"]
+  isActive: boolean;
+  createdAt?: any;
+}
+
+export interface Availability {
+  id: string;
+  examId: string;
+  employeeId: string;
+  employeeName: string; // Guardamos o nome para facilitar leitura depois
+  isAvailable: boolean;
+  updatedAt: any;
+}
+
+// --- NOVOS TIPOS ADICIONADOS (Correção do Erro) ---
+
+export type ExamStatus = 'draft' | 'availability_open' | 'allocating' | 'closed';
+
+export interface Exam {
+  id: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  startTime: string;
+  endTime: string;
+  type: string; // Ex: "Regular", "Recuperação"
+  studentCountEstimate: number;
+  status: ExamStatus;
+  targetPeriods: string[];
+  instructions?: string;
+  createdAt: any;
+}
+
+export interface Allocation {
+  id: string;
+  examId: string;
+  roomId: string;
+  employeeIds: string[]; // Lista de IDs dos funcionários nesta sala
+  updatedAt: any;
+}
+
+export type OccurrenceType = 'positive' | 'negative' | 'neutral';
+
+export interface Occurrence {
+  id: string;
+  examId: string;
+  type: OccurrenceType; // Positiva (Verde), Negativa (Vermelha), Neutra (Cinza)
+  title: string;
+  description: string;
+  employeeId?: string; // Opcional: Se a ocorrência for sobre alguém específico
+  employeeName?: string; // Para facilitar a exibição
+  createdAt: any;
+}

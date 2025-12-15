@@ -8,14 +8,28 @@ import { AuthProvider } from "./contexts/AuthContext";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-
+import Registries from "@/pages/Registries";
+import Exams from "@/pages/Exams";
+import PublicAvailability from "@/pages/PublicAvailability";
+import ExamDetails from "@/pages/ExamDetails";
+import PublicBoard from "@/pages/PublicBoard";
+import StudentBoard from "@/pages/StudentBoard";
 
 function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/availability"} component={PublicAvailability} />
       <Route path={"/admin"} component={Login} />
       <Route path={"/admin/dashboard"} component={Dashboard} />
+      
+      {/* ROTA ADICIONADA AQUI: */}
+      <Route path={"/admin/registries"} component={Registries} />
+      <Route path={"/admin/exams"} component={Exams} />
+      <Route path={"/admin/exams/:id"} component={ExamDetails} />
+      <Route path={"/board/:id"} component={PublicBoard} />
+      <Route path="/student-board/:id" component={StudentBoard} />
+      
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
@@ -47,3 +61,17 @@ function App() {
 }
 
 export default App;
+
+export type ExamStatus = 'draft' | 'availability_open' | 'allocating' | 'closed';
+
+export interface Exam {
+  id: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  startTime: string;
+  endTime: string;
+  type: string; // Ex: "P1", "Recuperação", "Integrada"
+  studentCountEstimate: number;
+  status: ExamStatus;
+  createdAt: any;
+}
