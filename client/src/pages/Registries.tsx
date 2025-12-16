@@ -9,11 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import SharePortalModal from "@/components/SharePortalModal";
 import { 
   UsersIcon, BuildingOfficeIcon, TrashIcon, PencilIcon, 
   PlusIcon, ArrowLeftIcon, StarIcon, LinkIcon 
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
+import ShareRegistrationModal from "@/components/ShareRegistrationModal";
 
 export default function Registries() {
   const { user } = useAuth();
@@ -156,13 +158,24 @@ export default function Registries() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans pb-12">
-      {/* Header Simples */}
-      <header className="bg-white border-b border-gray-200 px-4 h-16 shadow-sm flex items-center justify-between">
-        <div className="flex items-center gap-3">
-            <button onClick={() => setLocation("/admin")} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors">
-                <ArrowLeftIcon className="w-5 h-5" />
-            </button>
-            <h1 className="text-sm font-display font-bold text-gray-900">Cadastros Base</h1>
+      
+      {/* HEADER FIXO E ALINHADO */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
+        <div className="container mx-auto px-4 max-w-5xl h-16 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+                {/* Correção do Link: vai para /admin/dashboard ao invés de /admin */}
+                <button onClick={() => setLocation("/admin/dashboard")} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors">
+                    <ArrowLeftIcon className="w-5 h-5" />
+                </button>
+                
+                <div className="h-6 w-px bg-gray-200 hidden sm:block"></div>
+                
+                {/* LOGO E TÍTULO */}
+                <div className="flex items-center gap-3">
+                    <img src="/logo.png" alt="Afya" className="h-8 w-auto object-contain" />
+                    <h1 className="text-sm font-display font-bold text-gray-900">Cadastros Base</h1>
+                </div>
+            </div>
         </div>
       </header>
 
@@ -189,9 +202,17 @@ export default function Registries() {
             <div>
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="font-bold text-gray-700">Funcionários Cadastrados ({employees.length})</h2>
-                    <Button onClick={() => { setEditingEmp(null); resetEmpForm(); setIsEmpModalOpen(true); }} className="neo-btn flex items-center gap-2 text-xs">
-                        <PlusIcon className="w-4 h-4" /> Novo Funcionário
-                    </Button>
+                    
+                    {/* Agrupamos os botões aqui */}
+                    <div className="flex items-center gap-2">
+                        {/* BOTÃO NOVO: Link de Cadastro */}
+                        <ShareRegistrationModal />
+
+                        {/* BOTÃO ANTIGO: Cadastro Manual */}
+                        <Button onClick={() => { setEditingEmp(null); resetEmpForm(); setIsEmpModalOpen(true); }} className="neo-btn flex items-center gap-2 text-xs">
+                            <PlusIcon className="w-4 h-4" /> Novo Manual
+                        </Button>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -227,13 +248,21 @@ export default function Registries() {
 
         {/* --- CONTEÚDO SALAS --- */}
         {activeTab === 'rooms' && (
-            <div>
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="font-bold text-gray-700">Salas Disponíveis ({rooms.length})</h2>
-                    <Button onClick={() => { setEditingRoom(null); resetRoomForm(); setIsRoomModalOpen(true); }} className="neo-btn flex items-center gap-2 text-xs">
-                        <PlusIcon className="w-4 h-4" /> Nova Sala
-                    </Button>
-                </div>
+          <div>
+              <div className="flex justify-between items-center mb-4">
+                  <h2 className="font-bold text-gray-700">Salas Disponíveis ({rooms.length})</h2>
+                  
+                  {/* Agrupamos os botões aqui */}
+                  <div className="flex items-center gap-2">
+                      {/* NOVO BOTÃO: Portal Reprografia */}
+                      <SharePortalModal />
+
+                      {/* BOTÃO ANTIGO: Nova Sala */}
+                      <Button onClick={() => { setEditingRoom(null); resetRoomForm(); setIsRoomModalOpen(true); }} className="neo-btn flex items-center gap-2 text-xs">
+                          <PlusIcon className="w-4 h-4" /> Nova Sala
+                      </Button>
+                  </div>
+              </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {rooms.map(room => (

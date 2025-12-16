@@ -4,10 +4,10 @@ import { doc, getDoc, collection, query, where, getDocs, onSnapshot, orderBy } f
 import { db } from "@/lib/firebase";
 import { Exam, Room, Allocation } from "@/lib/types";
 import { 
-  CalendarDaysIcon, ClockIcon, MagnifyingGlassIcon, 
-  MegaphoneIcon, AcademicCapIcon, MapPinIcon
+  CalendarDaysIcon, ClockIcon, MegaphoneIcon, 
+  AcademicCapIcon, MapPinIcon
 } from "@heroicons/react/24/outline";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, setHours, setMinutes } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export default function StudentBoard() {
@@ -19,19 +19,57 @@ export default function StudentBoard() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [searchTerm, setSearchTerm] = useState("");
+  
+  const [countdownText, setCountdownText] = useState<string | null>(null);
 
   const [warnings, setWarnings] = useState<string[]>([
-    "⚠️ Confira seu documento com foto",
-    "📱 Celulares desligados",
-    "🕒 Chegue com antecedência",
-    "🖊️ Caneta azul ou preta"
+    "Confira seu documento com foto",
+    "Celulares desligados",
+    "Chegue com antecedência",
+    "Caneta azul ou preta",
+    "Silêncio nos corredores"
   ]);
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    const updateTimer = () => {
+      const now = new Date();
+      setCurrentTime(now);
+
+      if (exam) {
+        let startDateTime = parseISO(exam.date);
+        const [hours, minutes] = exam.startTime.split(':').map(Number);
+        startDateTime = setHours(startDateTime, hours);
+        startDateTime = setMinutes(startDateTime, minutes);
+
+        const diffMs = startDateTime.getTime() - now.getTime();
+
+        if (diffMs > 0) {
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+            if (diffDays > 0) {
+                setCountdownText(`Faltam ${diffDays} dia${diffDays > 1 ? 's' : ''} e ${diffHours}h`);
+            } else if (diffHours > 0) {
+                setCountdownText(`Início em ${diffHours}h ${diffMinutes}min`);
+            } else {
+                setCountdownText(`Início em ${diffMinutes} minutos`);
+            }
+        } else {
+             const passedMinutes = Math.abs(Math.floor(diffMs / 60000));
+             if (passedMinutes < 60) {
+                 setCountdownText("A prova já começou");
+             } else {
+                 setCountdownText(null);
+             }
+        }
+      }
+    };
+
+    updateTimer(); 
+    const timer = setInterval(updateTimer, 10000); 
     return () => clearInterval(timer);
-  }, []);
+  }, [exam]);
 
   useEffect(() => {
     if (examId) fetchData();
@@ -53,7 +91,7 @@ export default function StudentBoard() {
       setRooms(roomsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Room)));
 
       if (examData.instructions) {
-        setWarnings(prev => [ ...prev, `📢 ${examData.instructions.substring(0, 50)}...`]);
+        setWarnings(prev => [`NOTA DA COORDENAÇÃO: ${examData.instructions}`, ...prev]);
       }
 
       const q = query(collection(db, "allocations"), where("examId", "==", examId));
@@ -70,21 +108,11 @@ export default function StudentBoard() {
     }
   };
 
-  // --- AGRUPAR POR PERÍODO ---
   const roomsByPeriod = useMemo(() => {
     const groups: Record<string, Room[]> = {};
     
-    // Filtro de busca
-    let filteredRooms = rooms;
-    if (searchTerm) {
-        filteredRooms = rooms.filter(r => r.name.toLowerCase().includes(searchTerm.toLowerCase()));
-    }
-
-    filteredRooms.forEach(room => {
-        // Acha a alocação dessa sala
+    rooms.forEach(room => {
         const allocation = allocations.find(a => a.roomId === room.id);
-        
-        // Se a sala tem um período definido, usa ele. Se não, ignora (ou põe em "Outros")
         if (allocation && allocation.period) {
             const label = `${allocation.period}º Período`;
             if (!groups[label]) groups[label] = [];
@@ -93,7 +121,7 @@ export default function StudentBoard() {
     });
 
     return groups;
-  }, [rooms, allocations, searchTerm]);
+  }, [rooms, allocations]);
 
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
@@ -105,104 +133,117 @@ export default function StudentBoard() {
   if (!exam) return <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">Prova não encontrada.</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 selection:bg-[#d31c5b] selection:text-white flex flex-col">
+    <div className="min-h-screen font-sans text-gray-900 selection:bg-[#d31c5b] selection:text-white flex flex-col overflow-hidden bg-white">
       
-      {/* HEADER */}
-      <header className="bg-[#d31c5b] text-white shadow-lg z-40 border-b border-[#a01545]">
-        <div className="container mx-auto px-4 md:px-6 py-4 flex justify-between items-center">
-             <div className="flex items-center gap-4">
-                <img src="/logo.png" alt="Logo" className="h-10 md:h-12 w-auto object-contain filter drop-shadow-sm" />
-                <div className="border-l border-white/20 pl-4 h-10 hidden md:block"></div>
+      {/* --- HEADER --- */}
+      <header className="bg-[#d31c5b] text-white shadow-xl z-50 border-b border-[#a01545] relative">
+        <div className="container mx-auto px-6 py-5 flex justify-between items-start">
+             
+             <div className="flex items-start gap-6">
+                <img src="/logo_branco.png" alt="Logo" className="h-14 w-auto object-contain filter drop-shadow-sm" />
+                <div className="border-l border-white/20 pl-6 pt-1 hidden md:block min-h-[60px]"></div>
                 <div>
-                    <h1 className="text-xl md:text-2xl font-black uppercase leading-none">{exam.title}</h1>
-                    <p className="text-xs text-white/80 font-bold mt-1 uppercase">Localização por Período</p>
+                    <p className="text-sm font-bold text-white/80 uppercase mb-1 tracking-widest animate-pulse">
+                        Confira seu local de prova
+                    </p>
+                    
+                    <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+                        <h1 className="text-3xl md:text-4xl font-black uppercase leading-none tracking-tight text-white">
+                            {exam.title}
+                        </h1>
+                        
+                        {countdownText && (
+                            <div className="bg-white/10 border border-white/20 px-3 py-1 rounded-lg backdrop-blur-sm animate-pulse inline-flex items-center self-start md:self-auto">
+                                <ClockIcon className="w-4 h-4 text-white mr-2" />
+                                <span className="text-sm md:text-base font-bold uppercase text-white tracking-wide">
+                                    {countdownText}
+                                </span>
+                            </div>
+                        )}
+                    </div>
                 </div>
              </div>
              
-             <div className="hidden md:flex items-center gap-6 text-right">
+             <div className="hidden md:flex items-center gap-8 text-right text-white/90 pt-2">
                 <div>
                     <p className="text-[10px] uppercase font-bold text-white/60">Data</p>
-                    <p className="font-bold flex items-center gap-1"><CalendarDaysIcon className="w-4 h-4" /> {format(parseISO(exam.date), "dd/MM")}</p>
+                    <p className="text-xl font-bold flex items-center gap-2 justify-end"><CalendarDaysIcon className="w-5 h-5" /> {format(parseISO(exam.date), "dd/MM")}</p>
                 </div>
-                <div>
+                <div className="border-l border-white/20 pl-8">
                     <p className="text-[10px] uppercase font-bold text-white/60">Horário</p>
-                    <p className="font-bold flex items-center gap-1"><ClockIcon className="w-4 h-4" /> {exam.startTime}</p>
+                    <p className="text-xl font-bold flex items-center gap-2 justify-end"><ClockIcon className="w-5 h-5" /> {exam.startTime}</p>
                 </div>
              </div>
         </div>
       </header>
 
-      {/* LETREIRO */}
-      <div className="bg-yellow-400 text-yellow-900 overflow-hidden py-3 relative shadow-md">
-        <div className="absolute top-0 left-0 bg-yellow-500 text-yellow-900 px-3 h-full flex items-center z-10 font-black text-xs uppercase tracking-wider shadow-sm">
-            <MegaphoneIcon className="w-4 h-4 mr-1" /> Avisos
-        </div>
-        <div className="whitespace-nowrap animate-marquee flex gap-12 items-center">
-            {[...warnings, ...warnings].map((warning, index) => (
-                <span key={index} className="text-sm md:text-base font-bold uppercase tracking-wide flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 bg-yellow-800 rounded-full"></span>
-                    {warning}
-                </span>
-            ))}
+      {/* --- LETREIRO DIGITAL --- */}
+      <div className="bg-gray-50 border-b border-gray-200 py-4 relative shadow-sm z-40">
+        <div className="container mx-auto px-6 md:px-8 flex items-center gap-4">
+          <div className="bg-[#d31c5b] text-white px-4 py-3 rounded-lg flex items-center z-10 font-black text-xs uppercase tracking-wider shadow-lg flex-shrink-0">
+            <MegaphoneIcon className="w-4 h-4 mr-2" /> Avisos
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <div className="whitespace-nowrap animate-marquee flex gap-12 items-center">
+              {[...warnings, ...warnings].map((warning, index) => (
+                  <span key={index} className="text-sm font-semibold tracking-wide text-gray-700 flex items-center gap-3 flex-shrink-0 px-2">
+                      <span className="w-2 h-2 bg-[#d31c5b] rounded-full flex-shrink-0"></span>
+                      {warning}
+                  </span>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      <main className="flex-1 container mx-auto p-4 md:p-8">
-        
-        {/* Busca */}
-        <div className="mb-10 max-w-md mx-auto relative">
-            <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-3.5 text-gray-400" />
-            <input 
-                type="text" 
-                placeholder="Busque sua sala..." 
-                className="w-full pl-10 pr-4 py-3 rounded-full border border-gray-200 shadow-sm focus:ring-2 focus:ring-[#d31c5b] outline-none text-center font-bold text-gray-700"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-            />
-        </div>
-
-        {/* LISTAGEM AGRUPADA POR PERÍODO */}
+      {/* --- CONTEÚDO PRINCIPAL --- */}
+      <main className="flex-1 container mx-auto p-6 md:p-8 overflow-y-auto custom-scrollbar relative z-10">
         {Object.keys(roomsByPeriod).length === 0 ? (
-            <div className="text-center py-20 opacity-50">
-                <AcademicCapIcon className="w-20 h-20 mx-auto mb-4 text-gray-300" />
-                <p className="text-xl font-bold text-gray-400">Nenhuma turma alocada ainda.</p>
-                <p className="text-sm text-gray-400 mt-2">O ensalamento está sendo gerado.</p>
+            <div className="h-full flex flex-col items-center justify-center opacity-60">
+                <AcademicCapIcon className="w-32 h-32 mb-6 text-gray-400" />
+                <p className="text-3xl font-black text-gray-500 uppercase tracking-tight">Aguardando Ensalamento</p>
+                <p className="text-gray-500 mt-2 font-medium">As salas aparecerão aqui assim que definidas.</p>
             </div>
         ) : (
-            <div className="grid gap-10">
-                {/* Ordena os períodos (1º, 2º, 3º...) */}
-                {Object.entries(roomsByPeriod).sort((a,b) => a[0].localeCompare(b[0], undefined, { numeric: true })).map(([periodName, periodRooms]) => (
-                    <div key={periodName} className="relative">
-                        
-                        {/* TÍTULO DO PERÍODO (Estilo Divisor) */}
-                        <div className="flex items-center gap-4 mb-6">
-                            <div className="bg-[#d31c5b] text-white p-3 rounded-xl shadow-lg shadow-pink-200">
-                                <AcademicCapIcon className="w-8 h-8" />
-                            </div>
-                            <div>
-                                <h2 className="text-3xl font-black text-gray-800 uppercase tracking-tight">{periodName}</h2>
-                                <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">{periodRooms.length} Salas Alocadas</p>
-                            </div>
-                            <div className="flex-1 h-px bg-gray-200 ml-4"></div>
-                        </div>
-
-                        {/* GRID DE SALAS DESSE PERÍODO */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                            {periodRooms.map(room => (
-                                <div key={room.id} className="bg-white border-2 border-gray-100 hover:border-[#d31c5b] hover:shadow-lg rounded-2xl p-5 text-center transition-all group flex flex-col justify-center items-center relative overflow-hidden">
-                                    <div className="absolute top-0 right-0 bg-gray-100 text-[10px] font-bold text-gray-500 px-2 py-1 rounded-bl-lg">
-                                        {room.block}
-                                    </div>
-                                    
-                                    <MapPinIcon className="w-8 h-8 text-gray-300 group-hover:text-[#d31c5b] mb-2 transition-colors" />
-                                    <p className="text-2xl md:text-3xl font-black text-gray-800 leading-none">
-                                        {room.name.replace(/\D/g,'')} {/* Mostra só o número grande */}
-                                    </p>
-                                    <p className="text-xs font-bold text-gray-400 uppercase mt-1">
-                                        {room.name.replace(/\d+/g, '') || "Sala"} {/* Mostra "Sala" ou "Lab" */}
-                                    </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
+                {Object.entries(roomsByPeriod)
+                    .sort((a,b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+                    .map(([periodName, periodRooms]) => (
+                    
+                    <div key={periodName} className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full hover:shadow-md transition-shadow duration-300">
+                        <div className="bg-gray-50/80 border-b border-gray-100 p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-[#d31c5b]/10 text-[#d31c5b] p-2 rounded-lg">
+                                    <AcademicCapIcon className="w-6 h-6" />
                                 </div>
-                            ))}
+                                <h2 className="text-xl font-black text-gray-800 uppercase tracking-tight leading-none">
+                                    {periodName}
+                                </h2>
+                            </div>
+                            <span className="bg-white border border-gray-200 text-gray-500 text-[10px] font-bold px-2 py-1 rounded-md uppercase">
+                                {periodRooms.length} Salas
+                            </span>
+                        </div>
+                        <div className="p-4 flex-1 bg-white/50">
+                            <div className="grid grid-cols-2 gap-3">
+                                {periodRooms.map(room => {
+                                    const numericPart = room.name.replace(/\D/g, '');
+                                    const isNumericOnly = numericPart && room.name.match(/^[\d\s]+$/);
+                                    const displayName = isNumericOnly ? numericPart : room.name;
+                                    const roomType = room.name.includes("Lab") ? "" : "";
+                                    
+                                    return (
+                                        <div key={room.id} className="bg-[#d31c5b]/5 border border-[#d31c5b]/30 rounded-xl p-4 text-center flex flex-col items-center justify-center min-h-[90px]">
+                                            <span className="text-xs font-bold text-gray-400 uppercase mb-1 tracking-wider">
+                                                {roomType}
+                                            </span>
+                                            <span className={`font-black text-[#d31c5b] leading-none ${isNumericOnly ? 'text-3xl' : 'text-lg'}`}>
+                                                {displayName}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
                     </div>
                 ))}
@@ -210,15 +251,21 @@ export default function StudentBoard() {
         )}
       </main>
 
-      <footer className="bg-white border-t border-gray-200 py-4 text-center">
+      <footer className="bg-white border-t border-gray-200 py-3 px-6 flex justify-between items-center z-40">
         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-            Afya • Atualizado às {format(currentTime, "HH:mm")}
+            Afya • Faculdade de Medicina de Itajubá
+        </p>
+        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest bg-gray-100 px-2 py-1 rounded">
+            Atualizado às {format(currentTime, "HH:mm")}
         </p>
       </footer>
 
       <style>{`
         @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-        .animate-marquee { animation: marquee 30s linear infinite; }
+        .animate-marquee { animation: marquee 60s linear infinite; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #e5e7eb; border-radius: 20px; }
       `}</style>
     </div>
   );

@@ -7,14 +7,13 @@ import { Exam, Event, ExamStatus, ACADEMIC_PERIODS } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-// IMPORTANTE: Importar Textarea
 import { Textarea } from "@/components/ui/textarea"; 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   ClipboardDocumentCheckIcon, CalendarDaysIcon, PlusIcon, 
   ArrowLeftIcon, TrashIcon, ExclamationTriangleIcon, ClockIcon,
-  UsersIcon, DocumentTextIcon // Ícone novo para instruções
+  UsersIcon, DocumentTextIcon
 } from "@heroicons/react/24/outline";
 import { format, parseISO, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -39,7 +38,7 @@ export default function Exams() {
     studentCountEstimate: 50,
     status: 'draft',
     targetPeriods: ['all'],
-    instructions: '' // <--- Inicializando novo campo
+    instructions: '' 
   });
 
   useEffect(() => {
@@ -104,14 +103,12 @@ export default function Exams() {
       const examRef = doc(collection(db, "exams"));
       const eventRef = doc(collection(db, "events"));
 
-      // 1. Salva Prova
       batch.set(examRef, {
         ...formData,
         id: examRef.id,
         createdAt: Timestamp.now()
       });
 
-      // 2. Salva Evento Espelho
       batch.set(eventRef, {
         title: `Avaliação: ${formData.title}`,
         date: formData.date,
@@ -172,19 +169,31 @@ export default function Exams() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans pb-12">
-      <header className="bg-white border-b border-gray-200 px-4 h-16 shadow-sm flex items-center justify-between sticky top-0 z-20">
-        <div className="flex items-center gap-3">
-            <button onClick={() => setLocation("/admin/dashboard")} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors">
-                <ArrowLeftIcon className="w-5 h-5" />
-            </button>
-            <div className="flex items-center gap-2">
-                <div className="bg-purple-100 p-2 rounded-lg text-purple-700"><ClipboardDocumentCheckIcon className="w-5 h-5" /></div>
-                <h1 className="text-sm font-display font-bold text-gray-900">Gestão de Provas</h1>
+      
+      {/* HEADER FIXO E ALINHADO */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
+        <div className="container mx-auto px-4 max-w-5xl h-16 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+                <button onClick={() => setLocation("/admin/dashboard")} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors">
+                    <ArrowLeftIcon className="w-5 h-5" />
+                </button>
+                
+                <div className="h-6 w-px bg-gray-200 hidden sm:block"></div>
+                
+                {/* LOGO E TÍTULO */}
+                <div className="flex items-center gap-3">
+                    <img src="/logo.png" alt="Afya" className="h-8 w-auto object-contain" />
+                    <h1 className="text-sm font-display font-bold text-gray-900">Gestão de Provas</h1>
+                </div>
             </div>
+            
+            <Button 
+                onClick={() => { setFormData({...formData, status: 'draft', targetPeriods: ['all'], instructions: ''}); setIsModalOpen(true); }} 
+                className="neo-btn flex items-center gap-2 text-xs"
+            >
+                <PlusIcon className="w-4 h-4" /> Criar Prova
+            </Button>
         </div>
-        <Button onClick={() => { setFormData({...formData, status: 'draft', targetPeriods: ['all'], instructions: ''}); setIsModalOpen(true); }} className="neo-btn flex items-center gap-2 text-xs">
-            <PlusIcon className="w-4 h-4" /> Criar Prova
-        </Button>
       </header>
 
       <main className="container mx-auto p-4 md:p-8 max-w-5xl">
@@ -284,7 +293,6 @@ export default function Exams() {
                     </div>
                 </div>
 
-                {/* --- CAMPO NOVO: INSTRUÇÕES/FAQ --- */}
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                         <DocumentTextIcon className="w-4 h-4 text-gray-500" />

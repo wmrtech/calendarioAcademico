@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
-import { useLocation, useRoute } from "wouter";
+import { useRoute } from "wouter";
 import { doc, getDoc, collection, query, where, getDocs, onSnapshot, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Exam, Room, Allocation, Employee } from "@/lib/types";
 import { 
   CalendarDaysIcon, ClockIcon, MagnifyingGlassIcon, 
-  MapPinIcon, UserIcon, MegaphoneIcon, ChevronDownIcon, ChevronUpIcon,
-  FunnelIcon 
+  UserIcon, MegaphoneIcon, ChevronDownIcon, ChevronUpIcon,
+  XMarkIcon
 } from "@heroicons/react/24/outline";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, setHours, setMinutes } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export default function PublicBoard() {
@@ -20,18 +20,56 @@ export default function PublicBoard() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
-  
-  // Filtros
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeBlock, setActiveBlock] = useState("Todos");
-  
   const [currentTime, setCurrentTime] = useState(new Date());
+  
+  // Estado para o Contador
+  const [countdownText, setCountdownText] = useState<string | null>(null);
+  
+  // Estado para o ícone flutuante de avisos
   const [isNoticesOpen, setIsNoticesOpen] = useState(false);
 
+  // --- TIMER GERAL (Relógio + Contador) ---
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    const updateTimer = () => {
+      const now = new Date();
+      setCurrentTime(now);
+
+      if (exam) {
+        let startDateTime = parseISO(exam.date);
+        const [hours, minutes] = exam.startTime.split(':').map(Number);
+        startDateTime = setHours(startDateTime, hours);
+        startDateTime = setMinutes(startDateTime, minutes);
+
+        const diffMs = startDateTime.getTime() - now.getTime();
+
+        if (diffMs > 0) {
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+            if (diffDays > 0) {
+                setCountdownText(`Faltam ${diffDays} dia${diffDays > 1 ? 's' : ''} e ${diffHours}h`);
+            } else if (diffHours > 0) {
+                setCountdownText(`Início em ${diffHours}h ${diffMinutes}min`);
+            } else {
+                setCountdownText(`Início em ${diffMinutes} min`);
+            }
+        } else {
+             const passedMinutes = Math.abs(Math.floor(diffMs / 60000));
+             if (passedMinutes < 60) {
+                 setCountdownText("Prova Iniciada");
+             } else {
+                 setCountdownText(null);
+             }
+        }
+      }
+    };
+
+    updateTimer();
+    const timer = setInterval(updateTimer, 10000); 
     return () => clearInterval(timer);
-  }, []);
+  }, [exam]);
 
   useEffect(() => {
     if (examId) fetchData();
@@ -67,280 +105,350 @@ export default function PublicBoard() {
     }
   };
 
-  const availableBlocks = useMemo(() => {
-      const blocks = new Set(rooms.map(r => r.block).filter(Boolean));
-      return ["Todos", ...Array.from(blocks).sort()];
-  }, [rooms]);
-
-  const filteredRooms = useMemo(() => {
-    let result = rooms;
-
-    if (activeBlock !== "Todos") {
-        result = result.filter(r => r.block === activeBlock);
-    }
-
-    if (searchTerm) {
-        result = result.filter(room => {
-            if (room.name.toLowerCase().includes(searchTerm.toLowerCase())) return true;
-            const allocation = allocations.find(a => a.roomId === room.id);
-            if (!allocation) return false;
-            return allocation.employeeIds.some(empId => {
-                const emp = employees.find(e => e.id === empId);
-                return emp?.name.toLowerCase().includes(searchTerm.toLowerCase());
-            });
-        });
-    }
+  // --- LÓGICA DE SEPARAÇÃO E FILTRO ---
+  const { classroomRooms, supportGroups, coordinationTeam } = useMemo(() => {
     
-    return result;
-  }, [rooms, allocations, employees, searchTerm, activeBlock]);
+    // 1. COORDENAÇÃO
+    const coordinationTeam = employees.filter(emp => {
+        const role = emp.role.toUpperCase();
+        return role.includes('COORD') || role.includes('COO') || role.includes('ADM');
+    }).sort((a, b) => a.name.localeCompare(b.name));
+
+    // 2. APOIO
+    const supportMap = new Map<string, Employee[]>();
+    const allocatedSupportIds = new Set<string>(); 
+
+    // A) Alocados em Corredores
+    allocations.forEach(allocation => {
+        const room = rooms.find(r => r.id === allocation.roomId);
+        if (!room) return;
+
+        if (isCirculation(room.name)) {
+            const staff = allocation.employeeIds
+                .map(id => employees.find(e => e.id === id))
+                .filter(Boolean) as Employee[];
+
+            const validStaff = staff.filter(e => {
+                const r = e.role.toUpperCase();
+                return !(r.includes('COORD') || r.includes('COO') || r.includes('ADM'));
+            });
+
+            if (validStaff.length > 0) {
+                supportMap.set(room.name, validStaff);
+                validStaff.forEach(e => allocatedSupportIds.add(e.id));
+            }
+        }
+    });
+
+    // B) Cargo de Apoio/Volante não alocados em corredores
+    const unallocatedSupport = employees.filter(emp => {
+        const role = emp.role.toUpperCase();
+        const isSupport = role.includes('APO') || role.includes('SUPORTE') || role.includes('VOLANTE');
+        const isCoord = role.includes('COORD') || role.includes('COO') || role.includes('ADM');
+        const alreadyAllocatedInCorridor = allocatedSupportIds.has(emp.id);
+
+        return isSupport && !isCoord && !alreadyAllocatedInCorridor;
+    });
+
+    if (unallocatedSupport.length > 0) {
+        supportMap.set("Apoio", unallocatedSupport);
+    }
+
+    const supportGroups = Array.from(supportMap.entries()).map(([roomName, staff]) => ({ roomName, staff }));
+
+    // 3. SALAS DE AULA
+    const classroomList: Room[] = [];
+    rooms.forEach(room => {
+        if (!isCirculation(room.name)) {
+            if (searchTerm) {
+                const allocation = allocations.find(a => a.roomId === room.id);
+                const matchesName = room.name.toLowerCase().includes(searchTerm.toLowerCase());
+                const matchesStaff = allocation?.employeeIds.some(id => employees.find(e => e.id === id)?.name.toLowerCase().includes(searchTerm.toLowerCase()));
+                
+                if (matchesName || matchesStaff) classroomList.push(room);
+            } else {
+                classroomList.push(room);
+            }
+        }
+    });
+
+    return { 
+        classroomRooms: classroomList, 
+        supportGroups, 
+        coordinationTeam
+    };
+  }, [rooms, allocations, employees, searchTerm]);
+
+  function isCirculation(name: string) {
+      const n = name.toLowerCase();
+      return n.includes('corredor') || n.includes('banheiro') || n.includes('pátio') || n.includes('apoio') || n.includes('volante');
+  }
 
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#d31c5b] mb-4"></div>
-        <p className="animate-pulse tracking-widest uppercase text-xs font-bold text-[#d31c5b]">Carregando Sistema...</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-pink-600 mb-4"></div>
+        <p className="animate-pulse tracking-widest uppercase text-xs font-bold text-pink-600">Carregando Sistema...</p>
     </div>
   );
   
   if (!exam) return <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">Prova não encontrada.</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 selection:bg-[#d31c5b] selection:text-white pb-12">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 font-sans text-gray-900 selection:bg-pink-600 selection:text-white pb-16">
       
-      {/* --- HEADER AFYA CORRIGIDO --- */}
-      <header className="bg-[#d31c5b] text-white shadow-xl sticky top-0 z-40 border-b border-[#a01545]">
-        <div className="container mx-auto px-4 md:px-6 py-3 md:py-4">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+      {/* HEADER OTIMIZADO */}
+      <header className="text-white shadow-2xl sticky top-0 z-40" style={{ backgroundColor: '#d31c5b' }}>
+        <div className="container mx-auto px-4 md:px-6 py-3 md:py-4 flex flex-col md:flex-row justify-between items-center gap-3">
+            
+            {/* LADO ESQUERDO: LOGO E TÍTULO */}
+            <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-start">
+                <div className="flex items-center gap-4">
+                    <img src="/logo_branco.png" alt="Logo" className="h-7 md:h-10 w-auto object-contain shrink-0 filter drop-shadow-sm" />
+                    <div className="text-left">
+                        <span className="bg-pink-600/80 text-[9px] md:text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider text-white border border-pink-700/50 shadow-md block w-fit mb-0.5">Ensalamento</span>
+                        <h1 className="text-base md:text-2xl font-extrabold uppercase tracking-tight leading-none text-white">{exam.title}</h1>
+                    </div>
+                </div>
                 
-                {/* AJUSTE MOBILE: 
-                   - w-full para ocupar tudo
-                   - justify-between para separar Logo (esq) e Texto (dir)
-                   - items-center para alinhar verticalmente
-                */}
-                <div className="flex items-center justify-between md:justify-start w-full md:w-auto gap-4">
-                    
-                    {/* Logo na Esquerda */}
-                    <img 
-                        src="/logo_branco.png" 
-                        alt="Logo Instituição" 
-                        // Ajustei a altura no mobile (h-8) para não brigar com o texto
-                        className="h-8 md:h-12 w-auto object-contain shrink-0 filter drop-shadow-sm" 
-                    />
-                    
-                    {/* Separador (Desktop) */}
-                    <div className="border-l border-white/20 pl-0 md:pl-6 hidden md:block h-10"></div>
-                    
-                    {/* Texto na Direita (Mobile: text-right | Desktop: text-left) */}
-                    <div className="text-right md:text-left">
-                        {/* Container dos Badges alinhado à direita no mobile */}
-                        <div className="flex items-center justify-end md:justify-start gap-2 mb-1">
-                            <span className="bg-white/20 text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider text-white border border-white/10">
-                                Ensalamento
-                            </span>
-                            <span className="flex items-center gap-1.5 text-[9px] md:text-[10px] text-white font-bold uppercase animate-pulse">
-                                <span className="w-1.5 h-1.5 md:w-2 md:h-2 bg-green-400 rounded-full shadow-[0_0_8px_rgba(74,222,128,0.8)]"></span>
-                                Ao Vivo
+                {/* CONTADOR NO MOBILE */}
+                {countdownText && (
+                    <div className="md:hidden bg-pink-600 border border-pink-700 px-3 py-1 rounded-lg shadow-sm flex items-center">
+                        <ClockIcon className="w-3.5 h-3.5 text-white mr-1.5" />
+                        <span className="text-xs font-black uppercase text-white tracking-wide whitespace-nowrap">
+                            {countdownText}
+                        </span>
+                    </div>
+                )}
+            </div>
+            
+            {/* LADO DIREITO: CONTADOR DESKTOP */}
+            <div className="hidden md:flex items-center gap-6">
+                {countdownText && (
+                    <div className="bg-pink-600 border border-pink-700 px-3 py-1.5 rounded-lg shadow-lg backdrop-blur-sm inline-flex items-center self-center transition-all duration-300">
+                        <ClockIcon className="w-4 h-4 text-white mr-2" />
+                        <div className="text-right">
+                            <span className="text-sm font-black uppercase text-white tracking-wide block leading-none">
+                                {countdownText}
                             </span>
                         </div>
-                        {/* Título */}
-                        <h1 className="text-lg md:text-3xl font-black uppercase tracking-tight leading-none text-white">
-                            {exam.title}
-                        </h1>
                     </div>
-                </div>
-
-                {/* Info Rápida (Desktop) */}
-                <div className="items-center gap-8 text-white/80 hidden md:flex">
-                    <div className="text-right">
-                        <p className="text-xs uppercase font-bold text-white/60">Data</p>
-                        <p className="text-lg font-bold text-white flex items-center gap-2 justify-end">
-                            <CalendarDaysIcon className="w-5 h-5" />
-                            {format(parseISO(exam.date), "dd/MM", { locale: ptBR })}
-                        </p>
-                    </div>
-                    <div className="text-right border-l border-white/20 pl-8">
-                        <p className="text-xs uppercase font-bold text-white/60">Horário</p>
-                        <p className="text-lg font-bold text-white flex items-center gap-2 justify-end">
-                            <ClockIcon className="w-5 h-5" />
-                            {exam.startTime} - {exam.endTime}
-                        </p>
-                    </div>
-                </div>
+                )}
             </div>
-        </div>
-        
-        {/* BARRA DE BUSCA & FILTROS */}
-        <div className="bg-white border-b border-gray-200 shadow-sm sticky top-[68px] md:top-[88px] z-30">
-             <div className="container mx-auto px-4 md:px-6 py-3 space-y-3">
-                
-                {/* Input de Busca */}
-                <div className="flex items-center gap-4">
-                    <MagnifyingGlassIcon className="w-5 md:w-6 h-5 md:h-6 text-[#d31c5b]" />
-                    <input 
-                        type="text" 
-                        placeholder="Busque por nome, sala ou fiscal..." 
-                        className="w-full bg-transparent text-base md:text-lg font-medium text-gray-800 placeholder:text-gray-300 outline-none"
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                    />
-                </div>
-
-                {/* Filtros Rápidos */}
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar md:no-scrollbar mask-gradient">
-                    <FunnelIcon className="w-4 h-4 text-gray-400 shrink-0 mr-1" />
-                    {availableBlocks.map(block => (
-                        <button
-                            key={block}
-                            onClick={() => setActiveBlock(block)}
-                            className={`whitespace-nowrap px-3 py-1 text-xs font-bold uppercase rounded-full border transition-all 
-                                ${activeBlock === block 
-                                    ? 'bg-[#d31c5b] text-white border-[#d31c5b] shadow-md shadow-[#d31c5b]/20' 
-                                    : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-[#d31c5b]/50 hover:text-[#d31c5b]'
-                                }
-                            `}
-                        >
-                            {block}
-                        </button>
-                    ))}
-                </div>
-             </div>
         </div>
       </header>
 
       <main className="container mx-auto p-4 md:p-6 flex flex-col gap-6 items-start mt-2">
         
-        {/* AVISOS IMPORTANTES (TOPO) */}
-        {exam.instructions && (
-            <div className="w-full">
-                <button 
-                    onClick={() => setIsNoticesOpen(!isNoticesOpen)}
-                    className={`w-full group rounded-xl border transition-all duration-500 overflow-hidden text-left relative
-                        ${isNoticesOpen 
-                            ? 'bg-yellow-50 border-yellow-200 shadow-sm' 
-                            : 'bg-white border-l-4 border-l-yellow-400 border-y-gray-200 border-r-gray-200 hover:shadow-md'
-                        }
-                    `}
-                >
-                    <div className="p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-full ${isNoticesOpen ? 'bg-yellow-100 text-yellow-700' : 'bg-yellow-100 text-yellow-600 animate-pulse'}`}>
-                                <MegaphoneIcon className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <h2 className="font-bold text-sm uppercase tracking-wide text-yellow-900">
-                                    {isNoticesOpen ? 'Quadro de Avisos' : 'Avisos Importantes'}
-                                </h2>
-                                {!isNoticesOpen && (
-                                    <p className="text-xs text-gray-400 mt-0.5">Ler instruções.</p>
-                                )}
-                            </div>
-                        </div>
-                        {isNoticesOpen ? <ChevronUpIcon className="w-5 h-5 text-gray-400" /> : <ChevronDownIcon className="w-5 h-5 text-gray-400" />}
-                    </div>
-
-                    <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isNoticesOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                        <div className="px-6 pb-6 pt-0">
-                            <div className="max-h-60 overflow-y-auto pr-2 border-t border-yellow-200 pt-4 custom-scrollbar">
-                                <div className="prose prose-sm text-gray-700 whitespace-pre-wrap font-medium">
-                                    {exam.instructions}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </button>
-            </div>
-        )}
-
-        {/* SALAS (ABAIXO) */}
+        {/* 1. BARRA DE PESQUISA */}
         <section className="w-full">
-            <div className="flex items-center justify-between mb-4 px-1">
-                <h3 className="text-sm font-bold text-gray-500 uppercase flex items-center gap-2">
-                    {activeBlock !== "Todos" ? `Filtrando por: ${activeBlock}` : "Todas as Salas"}
-                    <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full text-[10px]">
-                        {filteredRooms.length}
-                    </span>
-                </h3>
+            <div className="flex items-center gap-4 bg-white p-3 md:p-4 rounded-2xl border-2 border-pink-600/50 shadow-lg hover:border-pink-600 transition-colors">
+                <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 ml-1" />
+                <input 
+                  type="text" 
+                  placeholder="Buscar sua sala ou nome..." 
+                  className="w-full bg-transparent text-base md:text-lg font-bold text-gray-800 placeholder:text-gray-400 outline-none" 
+                  value={searchTerm} 
+                  onChange={e => setSearchTerm(e.target.value)} 
+                />
             </div>
+        </section>
 
-            {filteredRooms.length === 0 ? (
-                <div className="bg-white rounded-2xl p-16 text-center border-2 border-dashed border-gray-200">
-                    <MagnifyingGlassIcon className="w-16 h-16 text-gray-200 mx-auto mb-4" />
-                    <p className="text-gray-400 text-xl font-medium">Nenhum resultado encontrado.</p>
+        {/* 2. GRID PRINCIPAL (SALAS DE AULA) */}
+        <section className="w-full">
+            <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-300">
+                <h2 className="flex items-center gap-3 text-lg md:text-xl font-extrabold text-gray-800 uppercase">
+                    Salas de Aplicação
+                    <span className="bg-pink-600 text-white text-xs px-3 py-1.5 rounded-full font-bold shadow-md">{classroomRooms.length}</span>
+                </h2>
+            </div>
+            
+            {classroomRooms.length === 0 ? (
+                <div className="bg-white rounded-2xl p-16 text-center border-2 border-dashed border-gray-300 shadow-inner">
+                    <MagnifyingGlassIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500 text-xl font-medium">Nenhuma sala encontrada.</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
-                    {filteredRooms.map(room => {
-                        const allocation = allocations.find(a => a.roomId === room.id);
-                        const staff = allocation?.employeeIds.map(id => employees.find(e => e.id === id)).filter(Boolean) as Employee[] || [];
-                        const isEmpty = staff.length === 0;
-
-                        return (
-                            <div key={room.id} className={`group bg-white rounded-xl border shadow-sm transition-all duration-300 flex flex-col overflow-hidden relative ${isEmpty ? 'border-gray-100 opacity-80' : 'border-gray-200 hover:shadow-lg hover:border-[#d31c5b]/30'}`}>
-                                
-                                <div className="absolute top-0 right-0 p-3">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 bg-gray-50 border border-gray-100 px-2 py-1 rounded-md group-hover:bg-[#d31c5b]/5 group-hover:text-[#d31c5b] transition-colors">
-                                        {room.block}
-                                    </span>
-                                </div>
-
-                                <div className="p-4 md:p-5 border-b border-gray-50 bg-gradient-to-r from-transparent via-transparent to-gray-50/30">
-                                    <div className="flex items-start gap-3">
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${isEmpty ? 'bg-gray-100 text-gray-400' : 'bg-[#d31c5b] text-white shadow-lg shadow-[#d31c5b]/20'}`}>
-                                            <MapPinIcon className="w-5 h-5" />
-                                        </div>
-                                        <div className="mt-1">
-                                            <h3 className="text-lg md:text-xl font-black text-gray-800 leading-none">
-                                                {room.name}
-                                            </h3>
-                                            <p className="text-xs text-gray-400 mt-1 font-medium">Cap: {room.capacity}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div className="p-4 md:p-5 flex-1 bg-gray-50/30">
-                                    <h4 className="text-[10px] font-bold text-gray-400 uppercase mb-3 flex items-center gap-2">
-                                        <UserIcon className="w-3 h-3" />
-                                        Equipe Designada
-                                    </h4>
-                                    
-                                    {isEmpty ? (
-                                        <div className="flex flex-col items-center justify-center py-4 text-gray-300 border-2 border-dashed border-gray-100 rounded-lg">
-                                            <span className="text-xs font-medium">Aguardando...</span>
-                                        </div>
-                                    ) : (
-                                        <ul className="space-y-2">
-                                            {staff.map(emp => {
-                                                const isMatch = searchTerm && emp.name.toLowerCase().includes(searchTerm.toLowerCase());
-                                                return (
-                                                    <li key={emp.id} className={`flex items-center justify-between p-2 rounded-lg border transition-all ${isMatch ? 'bg-[#d31c5b]/10 border-[#d31c5b]/20 shadow-sm' : 'bg-white border-gray-100'}`}>
-                                                        <div className="flex items-center gap-2 overflow-hidden">
-                                                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isMatch ? 'bg-[#d31c5b]' : 'bg-gray-300'}`}></div>
-                                                            <span className={`text-sm font-bold truncate ${isMatch ? 'text-[#a01545]' : 'text-gray-700'}`}>
-                                                                {emp.name}
-                                                            </span>
-                                                        </div>
-                                                        <span className="text-[9px] uppercase font-bold text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
-                                                            {emp.role.substring(0,3)}
-                                                        </span>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
+                    {classroomRooms.map(room => (
+                        <RoomCard key={room.id} room={room} allocations={allocations} employees={employees} searchTerm={searchTerm} />
+                    ))}
                 </div>
             )}
         </section>
 
+        {/* 3. FISCAIS DE APOIO (FULL WIDTH) */}
+        <section className="w-full">
+          <h2 className="text-lg md:text-xl font-extrabold text-gray-800 uppercase mb-4">
+            Volantes
+          </h2>
+
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden flex flex-col transition-all duration-300 hover:shadow-xl hover:border-blue-300">
+              <div className="p-5 flex-1">
+                  {supportGroups.length === 0 ? (
+                      <p className="text-sm text-gray-400 italic text-center py-4">Nenhum apoio identificado.</p>
+                  ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                          {supportGroups.map((item, idx) => (
+                              // Aqui removemos o container "wrapper" com título e deixamos só o grid de pessoas fluir, 
+                              // mas como eles são agrupados por local, mantemos a estrutura plana.
+                              item.staff.map(emp => (
+                                  <div key={emp.id} className="flex items-center gap-3 p-3 rounded-xl bg-blue-50 border border-blue-100 hover:bg-white hover:border-blue-300 transition-all shadow-sm">
+                                      <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-md shrink-0">
+                                          {emp.name.charAt(0).toUpperCase()}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                          <p className="font-bold text-gray-800 text-sm leading-tight truncate">{emp.name}</p>
+                                          <p className="text-[10px] text-blue-600 uppercase font-bold mt-0.5 truncate">{emp.role}</p>
+                                      </div>
+                                  </div>
+                              ))
+                          ))}
+                      </div>
+                  )}
+              </div>
+          </div>
+        </section>
+
+        {/* 4. COORDENAÇÃO (FULL WIDTH) */}
+        <section className="w-full">
+          <h2 className="text-lg md:text-xl font-extrabold text-gray-800 uppercase mb-4">
+            Coordenação Geral
+          </h2>
+
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden flex flex-col transition-all duration-300 hover:shadow-xl hover:border-pink-300">
+              <div className="p-5 flex-1">
+                  {coordinationTeam.length === 0 ? (
+                      <p className="text-sm text-gray-400 italic text-center py-4">Nenhum coordenador cadastrado.</p>
+                  ) : (
+                      <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                          {coordinationTeam.map(emp => (
+                              <li key={emp.id} className="flex items-center gap-3 p-3 rounded-xl bg-pink-50 border border-pink-100 hover:bg-white hover:border-pink-300 transition-all shadow-sm">
+                                  <div className="h-10 w-10 rounded-full bg-pink-600 flex items-center justify-center text-white font-bold text-sm shadow-md shrink-0">
+                                      {emp.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                      <p className="font-bold text-gray-800 text-sm leading-tight truncate">{emp.name}</p>
+                                      <p className="text-[10px] text-pink-600 uppercase font-bold mt-0.5 truncate">{emp.role}</p>
+                                  </div>
+                              </li>
+                          ))}
+                      </ul>
+                  )}
+              </div>
+          </div>
+        </section>
+
       </main>
       
-      {/* Footer Mobile/Desktop */}
-      <footer className="fixed bottom-0 w-full bg-white border-t border-gray-200 py-2 px-4 md:px-6 text-center text-[10px] text-gray-400 uppercase font-bold z-30 flex justify-between items-center">
-        <span>Afya - Faculdade de Medicina de Itajubá | Coordenação de Medicina</span>
-        <span>Atualizado • {format(currentTime, "HH:mm")}</span>
+      {/* ÍCONE FLUTUANTE DE AVISOS */}
+      {exam.instructions && (
+        <div className="fixed bottom-20 right-6 z-50">
+          {/* Botão Flutuante */}
+          <button
+            onClick={() => setIsNoticesOpen(!isNoticesOpen)}
+            className="bg-yellow-500 hover:bg-yellow-600 text-white rounded-full p-4 shadow-2xl transition-all duration-300 transform hover:scale-110 flex items-center justify-center"
+            title="Clique para ver avisos importantes"
+          >
+            <MegaphoneIcon className="w-6 h-6" />
+          </button>
+
+          {/* Modal de Avisos (Expandido) */}
+          {isNoticesOpen && (
+            <div className="absolute bottom-20 right-0 bg-white rounded-2xl border border-yellow-200 shadow-2xl w-80 max-h-96 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="bg-gradient-to-r from-yellow-50 to-yellow-100/50 p-4 border-b border-yellow-200 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="bg-yellow-500 text-white p-2 rounded-lg">
+                    <MegaphoneIcon className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-bold text-gray-800 uppercase tracking-wide text-sm">Avisos Importantes</h3>
+                </div>
+                <button
+                  onClick={() => setIsNoticesOpen(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-4 max-h-80 overflow-y-auto custom-scrollbar">
+                <div className="prose prose-sm text-gray-700 whitespace-pre-wrap font-medium text-sm leading-relaxed">
+                  {exam.instructions}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* FOOTER */}
+      <footer className="fixed bottom-0 w-full bg-white border-t border-gray-200 py-2 px-4 md:px-6 text-center text-[9px] md:text-[10px] text-gray-500 uppercase font-bold z-30 flex justify-between items-center">
+        <span>Sistema Afya</span>
+        <div className="flex items-center gap-1">
+            <ClockIcon className="w-3 h-3" />
+            <span>{format(currentTime, "HH:mm")}</span>
+        </div>
       </footer>
     </div>
   );
+}
+
+// SUBCOMPONENTE DE CARD DE SALA (LIMPO E DIRETO)
+function RoomCard({ room, allocations, employees, searchTerm }: any) {
+    const allocation = allocations.find((a: Allocation) => a.roomId === room.id);
+    const staff = allocation?.employeeIds.map((id: string) => employees.find((e: Employee) => e.id === id)).filter(Boolean) || [];
+    const isEmpty = staff.length === 0;
+    const period = allocation?.period; 
+
+    return (
+        <div className={`group bg-white rounded-2xl border shadow-lg transition-all duration-300 flex flex-col overflow-hidden relative ${isEmpty ? 'border-gray-200 opacity-75 hover:opacity-100 hover:shadow-md' : 'border-pink-300/50 hover:shadow-2xl hover:border-pink-600/70 hover:-translate-y-1'}`}>
+            
+            {/* CABEÇALHO DO CARD - REMOVIDO BLOCO E PENDENTE */}
+            <div className={`p-4 md:p-5 flex items-start justify-between ${isEmpty ? 'bg-gray-50' : 'bg-gradient-to-r from-pink-50 to-pink-100/50'}`}>
+                <div className="flex flex-col items-start gap-1 flex-1">
+                    <h3 className="text-xl md:text-2xl font-black text-gray-800 leading-tight">
+                        {room.name}
+                    </h3>
+                    {period ? (
+                         <span className="inline-block px-2.5 py-1 bg-pink-100 text-pink-700 text-[10px] font-bold uppercase rounded-full border border-pink-200 shadow-sm">
+                            {period}º Período
+                        </span>
+                    ) : (
+                        <p className="text-xs text-gray-500 font-medium">Cap: {room.capacity}</p>
+                    )}
+                </div>
+            </div>
+            
+            {/* EQUIPE */}
+            <div className="p-4 md:p-5 flex-1 flex flex-col">
+                <h4 className="text-[10px] font-bold text-gray-600 uppercase mb-3 flex items-center gap-2 border-b border-gray-100 pb-2">
+                    <UserIcon className="w-3.5 h-3.5 text-pink-600" />
+                    Equipe ({staff.length})
+                </h4>
+                
+                {isEmpty ? (
+                    <div className="flex flex-col items-center justify-center py-8 flex-1 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                        <span className="text-xs font-semibold">Aguardando alocação</span>
+                    </div>
+                ) : (
+                    <ul className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                        {staff.map((emp: Employee) => {
+                            const isMatch = searchTerm && emp.name.toLowerCase().includes(searchTerm.toLowerCase());
+                            return (
+                                <li key={emp.id} className={`flex items-center justify-between p-2.5 rounded-lg border transition-all ${isMatch ? 'bg-pink-100 border-pink-300 shadow-md' : 'bg-white border-gray-100 hover:border-pink-200 hover:bg-pink-50/30'}`}>
+                                    <div className="flex items-center gap-2.5 overflow-hidden flex-1">
+                                        <div className={`w-2 h-2 rounded-full shrink-0 ${isMatch ? 'bg-pink-600 animate-pulse' : 'bg-gray-300'}`}></div>
+                                        <span className={`text-sm font-bold truncate ${isMatch ? 'text-pink-800' : 'text-gray-700'}`}>
+                                            {emp.name}
+                                        </span>
+                                    </div>
+                                    <span className="text-[9px] uppercase font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded border border-gray-200 shrink-0">
+                                        {emp.role.substring(0,3)}
+                                    </span>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
+            </div>
+        </div>
+    );
 }

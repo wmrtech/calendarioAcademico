@@ -14,6 +14,11 @@ import PublicAvailability from "@/pages/PublicAvailability";
 import ExamDetails from "@/pages/ExamDetails";
 import PublicBoard from "@/pages/PublicBoard";
 import StudentBoard from "@/pages/StudentBoard";
+import PublicRegistration from "@/pages/PublicRegistration";
+import PublicEnsalamento from "@/pages/PublicEnsalamento";
+import PublicExamSelection from "@/pages/PublicExamSelection";
+import PublicReenrollment from "@/pages/PublicReenrollment";
+import ReenrollmentManager from "@/pages/admin/ReenrollmentManager";
 
 function Router() {
   return (
@@ -23,12 +28,17 @@ function Router() {
       <Route path={"/admin"} component={Login} />
       <Route path={"/admin/dashboard"} component={Dashboard} />
       
-      {/* ROTA ADICIONADA AQUI: */}
+      {/* ADICIONAR NOVAS ROTAS AQUI: */}
       <Route path={"/admin/registries"} component={Registries} />
       <Route path={"/admin/exams"} component={Exams} />
       <Route path={"/admin/exams/:id"} component={ExamDetails} />
       <Route path={"/board/:id"} component={PublicBoard} />
       <Route path="/student-board/:id" component={StudentBoard} />
+      <Route path="/registro-fiscal/:examId" component={PublicRegistration} />
+      <Route path="/ensalamento/:id" component={PublicEnsalamento} />
+      <Route path="/portal-reprografia" component={PublicExamSelection} />
+      <Route path="/solicitacao-rematricula" component={PublicReenrollment} />
+      <Route path="/admin/reenrollment" component={ReenrollmentManager} />
       
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}

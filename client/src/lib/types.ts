@@ -1,5 +1,6 @@
 import { Timestamp } from "firebase/firestore";
 
+// --- CATEGORIAS E CONFIGURAÇÕES VISUAIS ---
 export interface Category {
   id: string;
   label: string;
@@ -10,6 +11,7 @@ export interface Category {
 
 export type RecurrenceType = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly';
 
+// --- EVENTOS (AGENDA) ---
 export interface Event {
   id: string;
   title: string;
@@ -38,6 +40,7 @@ export interface Event {
   updatedAt: Timestamp;
 }
 
+// --- CONSTANTES ---
 // ATUALIZADO: Apenas Ciclo Básico e Clínico (1º ao 8º)
 export const ACADEMIC_PERIODS = [
   { id: '1', label: '1º Período' },
@@ -56,8 +59,12 @@ export const DEFAULT_CATEGORIES: Record<string, Category> = {
   humanities: { id: 'humanities', label: 'Humanas', color: 'bg-yellow-400', text: 'text-black', border: 'border-yellow-600' },
   technology: { id: 'technology', label: 'Tecnologia', color: 'bg-purple-500', text: 'text-white', border: 'border-purple-700' },
   general: { id: 'general', label: 'Geral', color: 'bg-gray-200', text: 'text-black', border: 'border-gray-400' },
+  // Adicionado categorias úteis para eventos acadêmicos
+  exam: { id: 'exam', label: 'Prova', color: 'bg-pink-600', text: 'text-white', border: 'border-pink-800' },
+  class: { id: 'class', label: 'Aula', color: 'bg-blue-600', text: 'text-white', border: 'border-blue-800' },
 };
 
+// --- NOTIFICAÇÕES ---
 export type NotificationType = 'info' | 'warning' | 'urgent';
 
 export interface AppNotification {
@@ -68,40 +75,49 @@ export interface AppNotification {
   createdAt: Timestamp;
 }
 
-export type EmployeeRole = 'Fiscal' | 'Aplicador' | 'Apoio' | 'Coordenação';
+// --- FUNCIONÁRIOS (EMPLOYEES) ---
+// Alterado para string para aceitar cargos do RH (Docente, Adm) vindos do formulário
+export type EmployeeRole = string; 
 
 export interface Employee {
   id: string;
   name: string;
-  email: string;
+  email?: string; // Opcional (não pedimos no cadastro público)
   phone: string;
-  role: EmployeeRole;
-  experienceLevel: 1 | 2 | 3 | 4 | 5; // 1 = Novato, 5 = Expert
+  role: EmployeeRole; // Cargo Oficial (RH)
+  experienceLevel?: 1 | 2 | 3 | 4 | 5; // Opcional (definido pelo admin depois)
   isActive: boolean;
+  
+  // NOVOS CAMPOS (Vindos da Página de Captura)
+  availability?: string[]; // ["Manhã", "Tarde", "Noite"]
+  notes?: string;          // Observações de horário
+  status?: 'active' | 'pending' | 'inactive'; // Para triagem
+  
   createdAt?: any;
 }
 
+// --- SALAS ---
 export interface Room {
   id: string;
   name: string; // Ex: "Sala 101", "Auditório Master"
-  block: string; // Ex: "Bloco A", "Bloco de Medicina"
+  block: string; // Ex: "Bloco A"
   capacity: number;
-  features: string[]; // Ex: ["Ar Condicionado", "Acessível", "Projetor"]
+  features: string[]; // Ex: ["Ar Condicionado", "Projetor"]
   isActive: boolean;
   createdAt?: any;
 }
 
+// --- DISPONIBILIDADE (Legado ou Específica) ---
 export interface Availability {
   id: string;
   examId: string;
   employeeId: string;
-  employeeName: string; // Guardamos o nome para facilitar leitura depois
+  employeeName: string;
   isAvailable: boolean;
   updatedAt: any;
 }
 
-// --- NOVOS TIPOS ADICIONADOS (Correção do Erro) ---
-
+// --- PROVAS (EXAMS) ---
 export type ExamStatus = 'draft' | 'availability_open' | 'allocating' | 'closed';
 
 export interface Exam {
@@ -118,24 +134,40 @@ export interface Exam {
   createdAt: any;
 }
 
+// --- ALOCAÇÃO ---
 export interface Allocation {
   id: string;
   examId: string;
   roomId: string;
-  employeeIds: string[];
-  period?: string; // Lista de IDs dos funcionários nesta sala
+  employeeIds: string[]; // Lista de IDs dos funcionários nesta sala
+  period?: string;       // Qual período (1º, 2º...) fará prova nesta sala
+  studentCount?: number;
   updatedAt: any;
 }
 
+// --- OCORRÊNCIAS ---
 export type OccurrenceType = 'positive' | 'negative' | 'neutral';
 
 export interface Occurrence {
   id: string;
   examId: string;
-  type: OccurrenceType; // Positiva (Verde), Negativa (Vermelha), Neutra (Cinza)
+  type: OccurrenceType;
   title: string;
   description: string;
-  employeeId?: string; // Opcional: Se a ocorrência for sobre alguém específico
-  employeeName?: string; // Para facilitar a exibição
+  employeeId?: string;
+  employeeName?: string;
+  createdAt: any;
+}
+
+export type ReenrollmentStatus = 'pending' | 'analyzing' | 'approved' | 'rejected';
+
+export interface ReenrollmentRequest {
+  id: string;
+  studentName: string;
+  cpf: string;
+  phone: string;
+  currentPeriod: string;
+  subjects: string; // Texto livre descrevendo as matérias
+  status: ReenrollmentStatus;
   createdAt: any;
 }
